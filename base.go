@@ -46,11 +46,12 @@ var (
 )
 
 type FileItem struct {
-	Name     string
-	IsDir    bool
-	Icon     rune
-	Color    termbox.Attribute
-	FilePath string
+	Name               string
+	IsDir              bool
+	Icon               rune
+	Color              termbox.Attribute
+	FilePath           string
+	IsCurrentSelection bool
 }
 
 func main() {
@@ -78,8 +79,9 @@ func main() {
 
 	visibleItems := termHeight - 1 // Subtract 1 for scrollbar
 	scrollOffset := 0
-
-	renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
+	currentSelectionRow := 1
+	selectedIndex := currentSelectionRow - 1
+	renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, currentSelectionRow)
 
 	renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 
@@ -92,18 +94,41 @@ func main() {
 			case termbox.KeyEsc, termbox.KeyCtrlC:
 				return
 			case termbox.KeyArrowDown:
-				if scrollOffset < len(items)-visibleItems {
-					scrollOffset++
-					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
+				if currentSelectionRow < len(items) {
+					if currentSelectionRow-scrollOffset >= visibleItems-1 {
+						scrollOffset++
+					}
+					currentSelectionRow++
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, currentSelectionRow)
 					renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 					termbox.Flush()
 				}
 			case termbox.KeyArrowUp:
-				if scrollOffset > 0 {
-					scrollOffset--
-					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
-					renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
+				if currentSelectionRow > 1 {
+					selectedIndex--
+					if selectedIndex < 0 {
+						scrollOffset--
+						selectedIndex = 0
+					}
+					currentSelectionRow = scrollOffset + selectedIndex + 1
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, currentSelectionRow)
+					// renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 					termbox.Flush()
+				}
+			case termbox.KeyEnter:
+				if currentSelectionRow <= len(items) {
+					// Perform the action for the selected item
+					// For example, navigate to the selected directory
+					selectedItem := items[currentSelectionRow-1]
+					if selectedItem.IsDir {
+						parentDir = selectedItem.FilePath
+						items, _ = getFileItems(parentDir)
+						currentSelectionRow = 1
+						scrollOffset = 0
+						renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, currentSelectionRow)
+						// renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
+						termbox.Flush()
+					}
 				}
 			}
 		case termbox.EventResize:
@@ -111,12 +136,13 @@ func main() {
 			termWidth, termHeight = termbox.Size()
 			startX = (termWidth - totalWidth) / 2
 			visibleItems = termHeight - 1 // Subtract 1 for scrollbar
-			renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
-			renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
+			renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, currentSelectionRow)
+			// renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 			termbox.Flush()
 		}
 	}
 }
+
 func convertLongRune(longRune string, maxWidth int) []rune {
 	runes := []rune(longRune)
 	runeWidth := runewidth.StringWidth(longRune)
@@ -129,7 +155,7 @@ func convertLongRune(longRune string, maxWidth int) []rune {
 	truncatedRunes := []rune(runewidth.Truncate(string(runes), truncatedWidth, ellipsis))
 	return truncatedRunes
 }
-func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight, visibleItems, scrollOffset int) {
+func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight, visibleItems, scrollOffset int, currentSelectionRow int) {
 	columnPositions = []int{}
 	for i := 0; i < columnCount; i++ {
 		pos := startX + i*(columnWidth+columnSpacing)
@@ -150,26 +176,33 @@ func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight,
 		// Calculate column position based on index
 		columnIndex := i % columnCount
 		columnPosition := columnPositions[columnIndex]
-
+		if row == currentSelectionRow {
+			// fmt.Println("currentSelectionRow", currentSelectionRow, row)
+			item.IsCurrentSelection = true
+		}
 		renderItem(item, columnPosition, row)
 	}
 }
 
 func renderItem(item FileItem, x, y int) {
 	runes := convertLongRune(item.Name, columnWidth)
-	// Render icon
-	// icon := item.Icon
-	// termbox.SetCell(0, y,item.Icon, item.Color, termbox.ColorDefault)
-
-	// Render name
 	for i := 0; i < columnWidth; i++ {
 		termbox.SetCell(i, y, ' ', item.Color, termbox.ColorDefault)
 	}
+	if item.IsCurrentSelection {
+		termbox.SetCell(0, y, '▸', item.Color, termbox.ColorDefault)
+	}
 	for i := 0; i < columnWidth-1; i++ {
 		if i < len(runes) && i < columnWidth-2 {
-			termbox.SetCell(i, y, runes[i], item.Color, termbox.ColorDefault)
+			termbox.SetCell(i+1, y, runes[i], item.Color, termbox.ColorDefault)
 		} else if i == columnWidth-2 {
 			termbox.SetCell(i, y, item.Icon, item.Color, termbox.ColorDefault)
+		}
+	}
+	if item.IsCurrentSelection {
+		for i := 0; i <= columnWidth-3; i++ {
+			termbox.SetBg(i, y, item.Color)
+			termbox.SetFg(i, y, termbox.ColorDefault)
 		}
 	}
 }

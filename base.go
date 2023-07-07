@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 	"time"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/nsf/termbox-go"
 )
 
@@ -21,7 +23,7 @@ const (
 
 	// Column widths
 	columnWidth = 20
-
+	ellipsis    = "..."
 	// Spacing between columns
 	columnSpacing = 4
 
@@ -43,6 +45,14 @@ var (
 	columnPositions = []int{}
 )
 
+type FileItem struct {
+	Name     string
+	IsDir    bool
+	Icon     rune
+	Color    termbox.Attribute
+	FilePath string
+}
+
 func main() {
 	err := termbox.Init()
 	if err != nil {
@@ -50,13 +60,13 @@ func main() {
 	}
 	defer termbox.Close()
 
-	// rand.Seed(time.Now().UnixNano())
-	rand.NewSource(time.Now().UnixNano())
+	rand.Seed(time.Now().UnixNano())
+
 	termbox.SetInputMode(termbox.InputEsc)
 
 	parentDir := "." // Replace with the desired parent directory path
 
-	directories, err := getDirectories(parentDir)
+	items, err := getFileItems(parentDir)
 	if err != nil {
 		panic(err)
 	}
@@ -66,12 +76,12 @@ func main() {
 	termWidth, termHeight := termbox.Size()
 	startX := (termWidth - totalWidth) / 2
 
-	visibleDirectories := termHeight - 1 // Subtract 1 for scrollbar
+	visibleItems := termHeight - 1 // Subtract 1 for scrollbar
 	scrollOffset := 0
 
-	renderColumns(directories, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleDirectories, scrollOffset)
+	renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
 
-	renderScrollbar(scrollbarWidth, termHeight, len(directories), visibleDirectories, scrollOffset)
+	renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 
 	termbox.Flush()
 
@@ -82,17 +92,17 @@ func main() {
 			case termbox.KeyEsc, termbox.KeyCtrlC:
 				return
 			case termbox.KeyArrowDown:
-				if scrollOffset < len(directories)-visibleDirectories {
+				if scrollOffset < len(items)-visibleItems {
 					scrollOffset++
-					renderColumns(directories, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleDirectories, scrollOffset)
-					renderScrollbar(scrollbarWidth, termHeight, len(directories), visibleDirectories, scrollOffset)
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
+					renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 					termbox.Flush()
 				}
 			case termbox.KeyArrowUp:
 				if scrollOffset > 0 {
 					scrollOffset--
-					renderColumns(directories, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleDirectories, scrollOffset)
-					renderScrollbar(scrollbarWidth, termHeight, len(directories), visibleDirectories, scrollOffset)
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
+					renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 					termbox.Flush()
 				}
 			}
@@ -100,29 +110,39 @@ func main() {
 			termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 			termWidth, termHeight = termbox.Size()
 			startX = (termWidth - totalWidth) / 2
-			visibleDirectories = termHeight - 1 // Subtract 1 for scrollbar
-			renderColumns(directories, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleDirectories, scrollOffset)
-			renderScrollbar(scrollbarWidth, termHeight, len(directories), visibleDirectories, scrollOffset)
+			visibleItems = termHeight - 1 // Subtract 1 for scrollbar
+			renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset)
+			renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 			termbox.Flush()
 		}
 	}
 }
+func convertLongRune(longRune string, maxWidth int) []rune {
+	runes := []rune(longRune)
+	runeWidth := runewidth.StringWidth(longRune)
 
-func renderColumns(directories []string, columnCount, startX, termWidth, termHeight, visibleDirectories, scrollOffset int) {
+	if runeWidth <= maxWidth {
+		return runes
+	}
+
+	truncatedWidth := maxWidth - runewidth.StringWidth(ellipsis)
+	truncatedRunes := []rune(runewidth.Truncate(string(runes), truncatedWidth, ellipsis))
+	return truncatedRunes
+}
+func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight, visibleItems, scrollOffset int) {
 	columnPositions = []int{}
 	for i := 0; i < columnCount; i++ {
 		pos := startX + i*(columnWidth+columnSpacing)
 		columnPositions = append(columnPositions, pos)
 	}
 
-	for i := 0; i < visibleDirectories; i++ {
+	for i := 0; i < visibleItems; i++ {
 		index := i + scrollOffset
-		if index >= len(directories) {
+		if index >= len(items) {
 			break
 		}
 
-		dir := directories[index]
-		color := columnColors[i%len(columnColors)]
+		item := items[index]
 
 		// Calculate row position based on index
 		row := i + 1
@@ -131,18 +151,25 @@ func renderColumns(directories []string, columnCount, startX, termWidth, termHei
 		columnIndex := i % columnCount
 		columnPosition := columnPositions[columnIndex]
 
-		renderColumn(dir, columnPosition, row, color)
+		renderItem(item, columnPosition, row)
 	}
 }
 
-func renderColumn(dir string, x, y int, color termbox.Attribute) {
-	runes := []rune(dir)
+func renderItem(item FileItem, x, y int) {
+	runes := convertLongRune(item.Name, columnWidth)
+	// Render icon
+	// icon := item.Icon
+	// termbox.SetCell(0, y,item.Icon, item.Color, termbox.ColorDefault)
 
+	// Render name
 	for i := 0; i < columnWidth; i++ {
-		if i < len(runes) {
-			termbox.SetCell(i, y, runes[i], color, termbox.ColorDefault)
-		} else {
-			termbox.SetCell(i, y, ' ', color, termbox.ColorDefault)
+		termbox.SetCell(i, y, ' ', item.Color, termbox.ColorDefault)
+	}
+	for i := 0; i < columnWidth-1; i++ {
+		if i < len(runes) && i < columnWidth-2 {
+			termbox.SetCell(i, y, runes[i], item.Color, termbox.ColorDefault)
+		} else if i == columnWidth-2 {
+			termbox.SetCell(i, y, item.Icon, item.Color, termbox.ColorDefault)
 		}
 	}
 }
@@ -158,24 +185,37 @@ func renderScrollbar(scrollbarWidth, termHeight, totalItems, visibleItems, scrol
 		width, _ := termbox.Size()
 		termbox.SetCell(width-scrollbarWidth, row, ' ', colorDefault, colorDefault)
 		if row >= scrollbarPos && row < scrollbarPos+scrollbarSize {
+			termbox.SetCell(width-scrollbarWidth, row, '▌', colorDefault, colorDefault)
 		} else {
 			termbox.SetCell(width-scrollbarWidth, row, ' ', colorDefault, colorDefault)
 		}
 	}
 }
 
-func getDirectories(parentDir string) ([]string, error) {
+func getFileItems(parentDir string) ([]FileItem, error) {
 	files, err := os.ReadDir(parentDir)
 	if err != nil {
 		return nil, err
 	}
 
-	var directories []string
+	var items []FileItem
 	for _, file := range files {
-		if file.IsDir() {
-			directories = append(directories, file.Name())
+		item := FileItem{
+			Name:     file.Name(),
+			IsDir:    file.IsDir(),
+			FilePath: fmt.Sprintf("%s/%s", parentDir, file.Name()),
 		}
+
+		if item.IsDir {
+			item.Icon = '📁'
+			item.Color = colorBlue
+		} else {
+			item.Icon = '📄'
+			item.Color = colorGreen
+		}
+
+		items = append(items, item)
 	}
 
-	return directories, nil
+	return items, nil
 }

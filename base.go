@@ -44,8 +44,8 @@ var (
 		colorWhite,
 	}
 
-	columnPositions = []int{}
-	counter         = 1
+	counter           = 1
+	horizontalCounter = 1
 )
 
 type FileItem struct {
@@ -56,6 +56,11 @@ type FileItem struct {
 	FilePath           string
 	IsCurrentSelection bool
 	RowNumber          int
+	ColumnNumber       int
+}
+type location struct {
+	x int
+	y int
 }
 
 func main() {
@@ -89,10 +94,10 @@ func main() {
 	visibleItems := termHeight - 1 // Subtract 1 for scrollbar
 	scrollOffset := 0
 
-	renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter)
+	pointerLocation := location{1, 1}
+	renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
 
 	renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
-
 	termbox.Flush()
 
 	for {
@@ -107,7 +112,8 @@ func main() {
 						scrollOffset++
 					}
 					counter++
-					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter)
+					pointerLocation.y++
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
 					renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 					termbox.Flush()
 				}
@@ -117,7 +123,24 @@ func main() {
 						scrollOffset--
 					}
 					counter--
-					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter)
+					pointerLocation.y--
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
+					termbox.Flush()
+				}
+			case termbox.KeyArrowLeft:
+				if horizontalCounter > 1 {
+					horizontalCounter--
+					pointerLocation.x--
+					pointerLocation.y = 1
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
+					termbox.Flush()
+				}
+			case termbox.KeyArrowRight:
+				if horizontalCounter < columnCount {
+					horizontalCounter++
+					pointerLocation.x++
+					pointerLocation.y = 1
+					renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
 					termbox.Flush()
 				}
 			case termbox.KeyEnter:
@@ -131,7 +154,7 @@ func main() {
 						scrollOffset = 0
 						counter = 1
 						startX = startX + columnWidth + columnSpacing
-						renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter)
+						renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
 						renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 						termbox.Flush()
 					}
@@ -142,7 +165,7 @@ func main() {
 			termWidth, termHeight = termbox.Size()
 			startX = (termWidth - totalWidth) / 2
 			visibleItems = termHeight - 1 // Subtract 1 for scrollbar
-			renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter)
+			renderColumns(items, columnCount, startX, termWidth-scrollbarWidth, termHeight, visibleItems, scrollOffset, counter, pointerLocation)
 			renderScrollbar(scrollbarWidth, termHeight, len(items), visibleItems, scrollOffset)
 			termbox.Flush()
 		}
@@ -162,7 +185,7 @@ func convertLongRune(longRune string, maxWidth int) []rune {
 	return truncatedRunes
 }
 
-func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight, visibleItems, scrollOffset int, counter int) {
+func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight, visibleItems, scrollOffset int, counter int, pointerLocation location) {
 	if counter-scrollOffset >= visibleItems {
 		scrollOffset = counter - visibleItems + 1
 	}
@@ -180,23 +203,23 @@ func renderColumns(items []FileItem, columnCount, startX, termWidth, termHeight,
 		// Calculate column position based on index
 		columnPosition := startX
 
-		if item.RowNumber == counter {
+		if item.RowNumber == pointerLocation.y && item.ColumnNumber == pointerLocation.x {
 			item.IsCurrentSelection = true
 		} else {
 			item.IsCurrentSelection = false
 		}
 
-		renderItem(item, columnPosition, row, counter)
+		renderItem(item, columnPosition, row, counter, pointerLocation)
 	}
 }
 
-func renderItem(item FileItem, x, y int, counter int) {
+func renderItem(item FileItem, x, y int, counter int, pointerLocation location) {
 	runes := convertLongRune(item.Name, columnWidth)
 	for i := 0; i < columnWidth; i++ {
 		termbox.SetCell(i+x, y, ' ', item.Color, termbox.ColorDefault)
 	}
 	// render counter variable used only for debugging purposes
-	counterRune := []rune(strconv.Itoa(x))
+	counterRune := []rune(strconv.Itoa(pointerLocation.x) + "," + strconv.Itoa(pointerLocation.y))
 	for i := 0; i < columnWidth-1; i++ {
 		if i < len(counterRune) {
 			termbox.SetCell(x+i, y, counterRune[i], item.Color, termbox.ColorDefault)
@@ -258,10 +281,11 @@ func getFileItems(parentDir string, showHidden bool) ([]FileItem, error) {
 			continue // Skip hidden directories if showHidden is false
 		}
 		item := FileItem{
-			Name:      file.Name(),
-			IsDir:     file.IsDir(),
-			FilePath:  fmt.Sprintf("%s/%s", parentDir, file.Name()),
-			RowNumber: nthitem + 1,
+			Name:         file.Name(),
+			IsDir:        file.IsDir(),
+			FilePath:     fmt.Sprintf("%s/%s", parentDir, file.Name()),
+			RowNumber:    nthitem + 1,
+			ColumnNumber: horizontalCounter,
 		}
 		nthitem++
 		if item.IsDir {
@@ -274,6 +298,6 @@ func getFileItems(parentDir string, showHidden bool) ([]FileItem, error) {
 
 		items = append(items, item)
 	}
-
+	horizontalCounter++
 	return items, nil
 }

@@ -1,4 +1,4 @@
-module pfs
+module github.com/pksingh21/pfs
 
 go 1.20
 

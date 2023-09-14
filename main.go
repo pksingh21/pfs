@@ -17,8 +17,24 @@ type File struct {
 	Name        string
 	Owner       string
 	Group       string
+	// add a time field for last modified
+	// add a size field for size of file
+	latestTime string
+	size       string
 }
 
+func convertiKBorMB(size int64) string {
+	// function to convert the given 64 byte size to KB or MB and add KB or MB to the end of the size
+	// if size is less than 1024 then return size + KB
+	// if size is greater than 1024 then return size / 1024 + MB
+	if size >= 1024*1024 {
+		return fmt.Sprint(size/(1024*1024)) + "MB"
+	} else if size >= 1024 {
+		return fmt.Sprint(size/1024) + "KB"
+	} else {
+		return fmt.Sprint(size) + "B"
+	}
+}
 func GetFilesAndDirectories(path string) []File {
 	var filesAndDirectories []File
 	fileInfos, err := os.ReadDir(path)
@@ -41,6 +57,8 @@ func GetFilesAndDirectories(path string) []File {
 			Name:        fileInfo.Name(),
 			Owner:       userName.Name,
 			Group:       groupName.Name,
+			latestTime:  extraFileInfo.ModTime().String(),
+			size:        convertiKBorMB(extraFileInfo.Size()),
 		}
 		filesAndDirectories = append(filesAndDirectories, file)
 	}
@@ -50,7 +68,7 @@ func GetFilesAndDirectories(path string) []File {
 func main() {
 	filesAndDirectories := GetFilesAndDirectories("/home/pks")
 	for _, file := range filesAndDirectories {
-		fmt.Println(file.isDirectory, file.isFile, file.Name, file.Owner,file.Group)
+		fmt.Println(file.isDirectory, file.isFile, file.Name, file.Owner, file.Group, file.latestTime, file.size)
 	}
 	a := app.New()
 	w := a.NewWindow("Hello")
